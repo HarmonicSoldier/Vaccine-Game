@@ -14,7 +14,10 @@ import numerics as num
 from pandemic import (MultiPopulation, MultiPreferences, MultiSupply,
                       Population, Preferences, Resource, Supply)
 from simulation import Simulation
+from strategy import Strategy, StrategyDistribution
+from evolve import EvolveSimulation
 
+from visualize import VisualizeEvolutionSimulation
 
 class GenerateTestCase:
     """Class responsible for generating test cases for reference"""
@@ -859,3 +862,70 @@ class TestSimulationGroup:
                     max_receive - my_simulation.expend_history[:, j, i])
 
         print("SUCCESS: Validating Solution Bounds")
+
+class TestEvolveSimulation:
+    """Tests the integrated functionality of the EvolveSimulation class to verify desired behaviour"""
+
+    @staticmethod
+    def test_basic_functionality():
+        """Returns whether or not the evolutionary model runs without issue"""
+        country_data1 = GenerateTestCase.gen_country_data_fixed(0, resource="TREAT")
+        country_data2 = GenerateTestCase.gen_country_data_fixed(0, resource="TREAT")
+        coop_coeffs = np.array([[1, 0.5], [-0.5, 1]])
+
+        my_simulation = Simulation([country_data1, country_data2], coop_coeffs, 100, 1)
+        country_list = my_simulation.country_list
+        my_simulation.start_simulation()
+        my_simulation.set_printing(None)
+
+        strat1A = Strategy(country_list, "idle")
+        strat1B = Strategy(country_list, "bang_greed")
+        strat_freq = np.array([0.5, 0.5])
+        strat_dist1 = StrategyDistribution([strat1A, strat1B], strat_freq)
+
+        strat2A = Strategy(country_list, "idle")
+        strat2B = Strategy(country_list, "bang_greed")
+        strat_freq = np.array([0.5, 0.5])
+        strat_dist2 = StrategyDistribution([strat2A, strat2B], strat_freq)
+
+        contest_time = 10
+        my_evolve_simulation = EvolveSimulation(my_simulation, [strat_dist1, strat_dist2], contest_time)
+        my_evolve_simulation.run_simulation(method="fittest", n=10.0)
+        my_evolve_simulation.reset_simulation()
+        my_evolve_simulation.iterate(method="fittest", n=10.0)
+
+
+    @staticmethod
+    def test_evolutionary_updates():
+        """Returns whether or not the simulation produces a desired result: strictly dominating strategies always outperform evolutionarily less dominant strategies"""
+
+        #the idea is that, with enough iterations and a very high n, the evolutionary populations should become lobsided almost immediately
+
+        country_data1 = GenerateTestCase.gen_country_data_fixed(1, resource="TREAT")
+        country_data2 = GenerateTestCase.gen_country_data_fixed(2, resource="TREAT")
+        coop_coeffs = GenerateTestCase.gen_coop_array_fixed(2)
+
+        my_simulation = Simulation([country_data1, country_data2], coop_coeffs, 100, 1)
+        country_list = my_simulation.country_list
+        my_simulation.start_simulation()
+        my_simulation.set_printing(None)
+
+        strat1A = Strategy(country_list, "idle")
+        strat1B = Strategy(country_list, "bang_greed")
+        strat_freq = np.array([0.5, 0.5])
+        strat_dist1 = StrategyDistribution([strat1A, strat1B], strat_freq)
+
+        strat2A = Strategy(country_list, "idle")
+        strat2B = Strategy(country_list, "bang_greed")
+        strat_freq = np.array([0.5, 0.5])
+        strat_dist2 = StrategyDistribution([strat2A, strat2B], strat_freq)
+
+        contest_time = 10
+        my_evolve_simulation = EvolveSimulation(my_simulation, [strat_dist1, strat_dist2], contest_time)
+        my_evolve_simulation.run_simulation(method="fittest", n=15.0)
+        my_evolve_simulation.reset_simulation()
+        my_evolve_simulation.iterate(method="fittest", n=15.0)
+
+        visualize_simulation = VisualizeEvolutionSimulation(my_evolve_simulation)
+        visualize_simulation.plot_freqs(uid=1)
+    

@@ -1,11 +1,45 @@
+"""This module is responsible for allowing one to construct evolutionary simulations to find evolutionary stable mixed strategy distributions amongst a pool of available strategies.
 
-from simulation import Simulation
-from strategy import Strategy, StrategyDistribution
+To construct an evolutionary simulation, complete the following steps:
+1) Construct a Simulation object (see simulation module)
+2) Create strategy distribution objects for each player
+3) Determine the number of iterations and invoke EvolveSimulation class constructor
 
-from copy import deepcopy
+Evolutionary simulations can be played, iterated, and reset similar to classical Simulation objects.
+They cannot be arbitrarily unwound, however
+
+Examples:
+
+    Constructs an evolutionary simulation with distinct pools of strategies
+
+    >>> country_data1 = {"uid": 1, "name" = "Azkaban"}
+    >>> country_data2 = {"uid": 2, "name" = "Bolivia"}
+    >>> coop_coeffs = np.array([[1, 0.5], [-0.5, 1]])
+    >>> my_simulation = Simulation([country_data1, country_data2], coop_coeffs, 100, 1)
+    >>> country_list = my_simulation.country_list
+
+    >>> strat1A = Strategy(country_list, "idle")
+    >>> strat1B = Strategy(country_list, "bang_greed")
+    >>> strat_freq = np.array([0.5, 0.5])
+    >>> strat_dist1 = StrategyDistribution([strat1A, strat1B], strat_freq])
+
+    >>> strat2A = Strategy(country_list, "idle")
+    >>> strat2B = Strategy(country_list, "bang_greed")
+    >>> strat_freq = np.array([0.5, 0.5])
+    >>> strat_dist2 = StrategyDistribution([strat2A, strat2B], strat_freq])
+
+    >>> contest_time = 10
+    >>> my_evolve_simulation EvolveSimulation(simulation, [strat_dist1, strat_dist2], contest_time)
+    >>> my_evolve_simulation.run_simulation()
+    >>> my_evolve_simulation.reset_simulation()
+    >>> my_evolve_simulation.iterate()
+
+"""
+import copy as copy
+import functools as func
 import itertools as iter
 import numerics as num
-
+import numpy as np
 class EvolveSimulation:
     """ Simulates the evolution of different types of strategies for the pandemic evolution game.
 
@@ -13,7 +47,7 @@ class EvolveSimulation:
     Simulations can be ran, iterated, and reset. through corresponding methods.
 
     Attributes:
-        simulation (:obj:`Simulation): used to run simulations upon
+        simulation (:obj:`Simulation): used to run simulations to extract payoff information
         strat_dists (:obj:`list` of :obj:`StrategyDistribution`): for each country, a frequency distribution of strategies
         num_countries (:obj:`int`): the constituent number of countries being tracked
         max_num_strats (:obj:`int`): across all countries, the largest number of strategies within one distribution
@@ -22,110 +56,96 @@ class EvolveSimulation:
         current_time (:obj:`int`): current number of completed iterations
     """
 
-    def __init__(simulation, strat_dists, contest_time):
+    def __init__(self, simulation, strat_dists, contest_time):
 
         #simulation objects, used to compute utilities
         self.simulation = copy.deepcopy(simulation)
         self.strat_dists = copy.deepcopy(strat_dists)
 
-        #initialized simulation variables, used to 
-        self.__init_simulation = copy.deepcopy(self.simulation)
-        self.__init_strat_dists = copy.deepcopy(self.strat_dists)
+        #initialized simulation variables, used to track past distributions
+        self.history = [-1] * (contest_time + 1)
+        self.history[0] = copy.deepcopy(self.strat_dists)
 
         #quantitive variables, change only when countries/strategies are added/removed
         self.num_countries = self.simulation.num_countries
         self.max_num_strats = self.__compute_max_num_strats()
 
         #evolutionary variables, evolve over time
-        self.strat_freqs = self.__compute_strat_freqs()
-        self.payoff_matrix = self.__compute_payoff_matrix()
-        self.profile_freqs = self.__compute_profile_freqs()
-        self.fitness_scores = self.__compute_fitness_scores()
+        self.__strat_freqs = self.__compute_strat_freqs()
+        self.__payoff_matrix = self.__compute_payoff_matrix()
+        self.__profile_freqs = self.__compute_profile_freqs()
+        self.__fitness_scores = self.__compute_fitness_scores()
 
         #time variables, used to keep track of simulation time
         self.contest_time = contest_time
         self.current_time = 0
 
-    def iterate(method="fittest", get_result=False, **kwargs):
-        """Updates the evolutionary population frequencies
+    def iterate(self, method="fittest", **kwargs):
+        """Using the specified method, updates the frequency distributions of strategies.
+           Updates occur internally and affect the strat_dists set of options.
 
         Args:
-            get_result (:obj:`bool`, optional): if true, returns an array of strategy frequencies for each country's distribution
             method (:obj:`str`, optional): the type of method used for updating frequencies based on fitness scores
             kwargs: additional keyword arguments to supply to the corresponding iteration method
-
-        Returns:
-            new_dist_freqs (:obj:`np.ndarray` of :obj:`float): if requested; ordered array of strategy frequencies (2D, num_countries by max_num_strats)
         """
+        #only iterates if simulation has not reached the end
+        if self.current_time < self.contest_time:
+            self.update_distributions(method, **kwargs)
+            self.__recompute()
 
-        #termination condition, ensures end-of-time condition is satisfied
-        if self.current_time >= self.contest_time:
-            return None
+            self.history[self.current_time + 1] = copy.deepcopy(self.strat_dists)
+            self.current_time += 1
 
-        #computes fittness scores for each strategy, then computes new frequencies
-        self.fitness_scores = self.__compute_fitness_scores()
-        self.update_distribution(method, **kwargs)
-
-        #increments the time of the contest by one
-        self.contest_time += 1
-        return self.__compute_strat_freqs() if get_result else None
-
-    def run_simulation(method="fittest", get_history=False, **kwargs):
+    def run_simulation(self, method="fittest", **kwargs):
         """Iterates through the evolutionary simulation until the ending frame
  
         Arguments:
             method (:obj:`str`, optional): the type of method used for updating frequencies
-            get_history (:obj:`bool`, optional): if true, returns a full history of strategy distributions
  
-        Returns:
-            history (:obj:`np.ndarray` of :obj:`float`): if specified. array of strategy frequencies for each player and time (3D, contest_time by num_countires by max_num_strats)
         """
         self.reset_simulation()
- 
-        past_frames = []
         for i in range(self.contest_time):
-            frame = self.iterate(method, get_history, **kwargs)
-            if get_history: past_frames.append(frame)
+            self.iterate(method, **kwargs)
  
-        return np.array(past_frames) if get_history else None
-
-    def reset_simulation():
+    def reset_simulation(self):
         """Resets the evolutionary simulation to the initialized state """
         self.current_time = 0
-        self.simulation = copy.deepcopy(self.__init_simulation)
-        self.strat_dists = copy.deepcopy(self.__init_strat_dists)
+        self.strat_dists = self.history[0]
 
-    def refresh():
-        """Following a change in strategy frequencies, recomputes the following attributes internally: max_num_strats, payoff_matrix, profile_freqs, fitness_scores
+    def __recompute(self):
+        """Given current strategy distributions, internally recomputes relevant depenedent quantities.
+        Should be called whenever strategy distributions are updated.
+
+        Following a change in strategy frequencies, recomputes the following attributes internally: max_num_strats, payoff_matrix, profile_freqs, fitness_scores
         """
-        self.max_number_strats = compute_max_num_strats()
-        self.strat_freqs = self.__compute_strat_freqs()
-        self.payoff_matrix = self.__compute_payoff_matrix()
-        self.profile_freqs = self.__compute_profile_freqs()
-        self.fitness_scores = self.__compute_fitness_scores()
+        self.__max_number_strats = self.__compute_max_num_strats()
+        self.__strat_freqs = self.__compute_strat_freqs()
+        self.__payoff_matrix = self.__compute_payoff_matrix()
+        self.__profile_freqs = self.__compute_profile_freqs()
+        self.__fitness_scores = self.__compute_fitness_scores()
 
-    def __compute_max_num_strats():
+    def __compute_max_num_strats(self):
         """Given all distributions, computes the maximum number of strategies across distributions.
 
         Returns:
             max_num_strats (:obj:`int`): integer number of encoding maximum number of strats possessed by a distribution
         """
-        return max((dist.num_strats for dist in self.strat_dists))
+        return max((dist.get_num_strats() for dist in self.strat_dists))
 
-    def __compute_strat_freqs():
+    def __compute_strat_freqs(self):
         """Given all distributions, computes a shared numpy array storing all of them
 
         Returns:
             strat_freqs (:obj:`np.ndarray` of :obj:`float`): array of strategy frequencies for each strategy (2D, num_countries by max_num_strats)
         """
-        num_strats = (dist.num_strats for dist in self.strat_dists)
+        num_strats = [dist.get_num_strats() for dist in self.strat_dists]
         strat_freqs = np.zeros(shape=(self.num_countries, max(num_strats)))
-
         for i in range(self.num_countries):
             strat_freqs[i, 0:num_strats[i]] = self.strat_dists[i].strat_freq
+
         return strat_freqs
 
-    def __compute_payoff_matrix():
+    def __compute_payoff_matrix(self):
         """Given all strategies within all distributions, computes a matrix of payoffs.
            Registers payoff matrix internally 
 
@@ -134,28 +154,34 @@ class EvolveSimulation:
                 given indices i1, i2, ... in, the value payoff_matrix[i1, i2, ..., in, :]
                 is a vector of payoffs for each country.
         """
-        #constructs the number of dimensions,
-        dims = (dist.num_strats for dist in self.strat_dists) + (self.num_countries,)
+        #constructs a tuple of array dimension
+        dims = [dist.get_num_strats() for dist in self.strat_dists] + [self.num_countries,]
 
         #builds the payoff matrix by computing each case independently
         #'profile', in this context, refers to a selection of strategies by number
-        payoff_matrix = np.zeros(shape=dims)
-        for profile in iter.product(*dims):
-            simulation.reset_simulation()
 
+        #auxillary functions: sets appropriate strategies
+        def set_strats(profile):
             for i in range(self.num_countries):
                 uid = self.simulation.uid_list[i]
                 strat = self.strat_dists[i].strat_list[profile[i]]
                 self.simulation.replace_strategy(uid, strat)
 
-            simulation.run_simulation()
-            payoffs = simulation.get_payoffs()
-            payoff_matrix[profile] = payoffs
+        #auxillary function; computes payoffs for set strategies
+        def get_payoffs():
+            self.simulation.run_simulation()
+            return self.simulation.get_payoffs()
 
-        simulation.reset_simulation()
+        payoff_matrix = np.empty(shape=dims)
+        for profile in iter.product(*[range(dim) for dim in dims]):
+            set_strats(profile)
+            payoffs = get_payoffs()
+            payoff_matrix[profile, ...] = payoffs
+
+        self.simulation.reset_simulation()
         return payoff_matrix
 
-    def __compute_profile_freqs():
+    def __compute_profile_freqs(self):
         """Computes a matrix of probabilities for all possible strategy profiles
 
         Returns:
@@ -164,12 +190,13 @@ class EvolveSimulation:
             is an absolute probability of occurence
         """
 
-        strat_freq_list = [self.dist.strat_freq for dist in self.strat_dists]
+        strat_freq_list = [dist.strat_freq for dist in self.strat_dists]
 
         #look up documentation for refresher on what this does
-        return np.multiply.reduce(np.ix_(*strat_freq_list))
+        print(strat_freq_list)
+        return func.reduce(np.multiply, np.ix_(*strat_freq_list))
 
-    def __compute_fitness_scores():
+    def __compute_fitness_scores(self):
         """Returns an array of each fitness values for each strategy in each distribution.
            Currently, fitness scores are calculated as weighted average of payoffs.
 
@@ -180,23 +207,21 @@ class EvolveSimulation:
             for accurate results, call after updating payoff_matrix, profile_freqs, and max_num_strats
         """
 
-        max_num_strats = self.max_num_strats
-        payoff_matrix = self.payoff_matrix
-        profile_freqs = self.profile_freqs
+        fitness_scores = np.zeros(shape=(self.num_countries, self.__compute_max_num_strats()))
 
         for i in range(self.num_countries):
-            util_matrix = self.profile_freqs * self.payoff_matrix[..., i]
+            util_matrix = self.__profile_freqs * self.__payoff_matrix[..., i]
             fitness_vect = num.safe_divide(
                 array1=np.sum(util_matrix, axis=i),
                 array2=self.strat_dists[i].strat_freq,
                 zero_substitute=0.0)
 
-            num_strats = self.strat_dists[i].num_strats
+            num_strats = self.strat_dists[i].get_num_strats()
             fitness_scores[i, 0:num_strats] = fitness_vect
 
         return fitness_scores
             
-    def update_distributions(method="fittest", **kwargs):
+    def update_distributions(self, method="fittest", **kwargs):
         """Assuming updated state, updates internal frequencies of strategies according to provided method. 
            
         Arguments:
@@ -207,7 +232,7 @@ class EvolveSimulation:
         """
         match method.lower():
             case "fittest":
-                self.update_distribution_fittest(n)
+                self.update_distributions_fittest(kwargs["n"])
             case _:
                 pass
 
@@ -223,31 +248,34 @@ class EvolveSimulation:
         """
 
         #computes how many strategies each player has
-        num_strats = [dist.num_strats for dist in self.strat_dists]
-        max_num_strats = self.max_num_strats
+        num_strats = [dist.get_num_strats() for dist in self.strat_dists]
 
         #first, drops the lowest scoring strategies of each country
         for i in range(self.num_countries):
 
-            #extracts information about a given distribution
-            dist = self.strat_dists[i]
-            scores = self.fitness_scores[i, 0:dist.num_strats]
+            #defines a desired distribution
+            strat_dist = self.strat_dists[i]
+            fittness_vect = self.__fitness_scores[i, 0:strat_dist.get_num_strats()]
             
             #initializes information about what to drop    
             left_to_drop = n / 100.0
-            drop_amounts = np.zeros_like(scores)
+            drop_amounts = np.zeros_like(fittness_vect)
 
-            #orders the strategies by what to drop
-            sorted_strats_index = sorted(range(dist.num_strats), key=lambda i: scores[i])
+            #determines order of strategies to drop
+            sorted_strats_index = sorted(
+                range(num_strats[i]),
+                key=lambda j: fittness_vect[j]
+            )
 
-            #drops each relevant amount until reached
-            for j in range(num_strats):
-                idx = sorted_strat_index[j]
-                drop_amounts[idx] = min(left_to_drop, dist.strat_freq[idx])
+            #drops largest amount from each before ending
+            for j in range(num_strats[i]):
+                idx = sorted_strats_index[j]
+                drop_amounts[idx] = min(left_to_drop, strat_dist.strat_freq[idx])
                 left_to_drop -= drop_amounts[idx]
 
-            dist.strat_freq -= drop.amounts
+            strat_dist.strat_freq -= drop_amounts
 
         #then scales the frequencies to reach one
         for i in range(self.num_countries):
-            dist.strat_freq /= np.sum(dist.strat_freqs)
+            strat_dist = self.strat_dists[i]
+            strat_dist.strat_freq /= np.sum(strat_dist.strat_freq)

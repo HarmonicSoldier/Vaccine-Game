@@ -28,51 +28,6 @@ import numpy as np
 import numerics as num
 from scipy.integrate import odeint
 
-class Resource:
-    """Defines a type of resource, which is one of the following possible categories:
-
-       "TREAT": resource has a persistent restorative effect, bringing a successfully treated infected individual into full recovery
-              associated with a control vector (numpy array) of [0, -1, 1, 0]
-       "PREVENT": resource has a persistent preventative effect, preventing a successfully treated susceptible individual from becoming infected
-              associated with a control vector (numpy array) of [-1, 0, 1, 0]
-    
-    Does not identify an amount or efficacy rate of a resource, as these are not intrinsic to the resource itself (efficacy, for example, may vary based on a country's population)
-
-    Attributes:
-        type (:obj:`str`): the type of the resource in question
-        vect (:obj:`np.ndarray` of :obj:`float`): control vector associated with resource type
-    """
-
-    def __init__(self, type):
-
-        self.type = type.upper()
-        
-        match self.type:
-            case "TREAT":
-                self.control_vect = np.array([0, -1, 1, 0])
-            case "PREVENT":
-                self.control_vect = np.array([-1, 0, 1, 0])
-            case _:
-                self.control_vect = np.array([0, -1, 1, 0])
-
-
-    def is_terminal(self, sird_array):
-        """Given an array of SIRD values for a collection of countries, returns which countries are at a terminal condition, where nonnegativity constraint is active:
-
-        Treatment (TREAT): no infected individuals remaining
-        Preventatitive (PREVENT): no susceptible individuals remaining
- 
-        Args:
-             sird_array (:obj:`np.ndarray` of :obj:`float`): array of SIRD values at current time (2D, num_countries by 4)
- 
-        Returns:
-             :obj:`np.ndarray` of :obj:`bool`: True wherever terminal condition is reached (1D, num_countries)
-        """
-        match self.type:
-            case "TREAT":
-                return num.which_near_positive(-sird_array[:, 0])
-            case "PREVENT":
-                return num.which_near_positive(-sird_array[:, 1])
 
 class Country:
     """Represents a self-determining jurisdiction.
@@ -209,6 +164,52 @@ class Country:
         for uid in self.prefs._coop_dict.keys():
             print(f"Coop for uid {uid}: {self.prefs._coop_dict[uid]} \n")
 
+class Resource:
+    """Defines a type of resource, which is one of the following possible categories:
+
+       "TREAT": resource has a persistent restorative effect, bringing a successfully treated infected individual into full recovery
+              associated with a control vector (numpy array) of [0, -1, 1, 0]
+       "PREVENT": resource has a persistent preventative effect, preventing a successfully treated susceptible individual from becoming infected
+              associated with a control vector (numpy array) of [-1, 0, 1, 0]
+    
+    Does not identify an amount or efficacy rate of a resource, as these are not intrinsic to the resource itself (efficacy, for example, may vary based on a country's population)
+
+    Attributes:
+        type (:obj:`str`): the type of the resource in question
+        vect (:obj:`np.ndarray` of :obj:`float`): control vector associated with resource type
+    """
+
+    def __init__(self, type):
+
+        self.type = type.upper()
+        
+        match self.type:
+            case "TREAT":
+                self.control_vect = np.array([0, -1, 1, 0])
+            case "PREVENT":
+                self.control_vect = np.array([-1, 0, 1, 0])
+            case _:
+                self.control_vect = np.array([0, -1, 1, 0])
+
+
+    def is_terminal(self, sird_array):
+        """Given an array of SIRD values for a collection of countries, returns which countries are at a terminal condition, where nonnegativity constraint is active:
+
+        Treatment (TREAT): no infected individuals remaining
+        Preventatitive (PREVENT): no susceptible individuals remaining
+ 
+        Args:
+             sird_array (:obj:`np.ndarray` of :obj:`float`): array of SIRD values at current time (2D, num_countries by 4)
+ 
+        Returns:
+             :obj:`np.ndarray` of :obj:`bool`: True wherever terminal condition is reached (1D, num_countries)
+        """
+        match self.type:
+            case "TREAT":
+                return num.which_near_positive(-sird_array[:, 0])
+            case "PREVENT":
+                return num.which_near_positive(-sird_array[:, 1])
+
 class Population:
     """Stores information about an epidemiologically homogenous group of individuals.
 
@@ -239,7 +240,7 @@ class Population:
 
         controlled affinely by adding a vector eff_rate(0, -1, 1, 0) or eff_rate(-1, 0, 1, 0) times the rate of consumption to the instaneous rate of change (derivative).
 
-        tot_pop (:obj:`float`): the total population of the country
+        tot_pop (:obj:`float`): the total population of the country, assumed constant
     """
 
     def __init__(self, sird_vect, param_vect):
@@ -810,10 +811,6 @@ class MultiPreferences:
         sird_utility_array = np.sum(self.util_array[:, 0:4] * sird_array, axis=1)
         supp_utility_array = self.util_array[:, 4] * supp_array
 
-        #applies the cooperation coefficients to extract pairwise utility
-        print(sird_utility_array)
-        print(supp_utility_array)
-        print(supp_array)
         return self.coop_array * (sird_utility_array + supp_utility_array)
 
     def get_utility_net(self, sird_array, supp_array):

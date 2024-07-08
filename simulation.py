@@ -123,7 +123,7 @@ class Simulation:
         """
         self._printing_interval = time_interval
 
-    def set_strategy(self, uid, option="default", kwargs={}):
+    def set_strategy(self, uid, option="default", **kwargs):
         """ Sets the strategy for a particular country, based on a provided option
 
         Args:
@@ -132,7 +132,7 @@ class Simulation:
             kwargs (:obj:`dict`, optional): a dictionary of additional arguments to specify strategy object
         """
         pos = self.uid_list.index(uid)
-        self.strategy_list[pos].set_strategy(option, kwargs)
+        self.strategy_list[pos].set_strategy(option, **kwargs)
 
     def set_strategies(self, option_list, kwargs_list):
         """ Sets the strategy for each country all at once, based on provided list of options
@@ -266,7 +266,7 @@ class Simulation:
             time (int): number of time frames by which to progress the simulation
         """
         for i in range(time):
-            print(f"\n Iteration {i} \n")
+            #print(f"\n Iteration {i} \n")
             self.step()
 
     def rewind_simulation(self, time_to_rewind):
@@ -309,7 +309,7 @@ class Simulation:
         self.reset_simulation()
         self.progress_simulation(self.end_time)
 
-    def get_payoffs():
+    def get_payoffs(self):
         """Returns the payoffs of the current state corresponding to each player
 
         TODO:
